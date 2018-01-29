@@ -1,0 +1,26 @@
+{
+  "extends": "airbnb-base",
+  "globals": {
+  },
+  "rules": {
+    "max-len": ["error", { "code": 120 }],
+    "arrow-body-style": ["off"],
+    "no-underscore-dangle": "off",
+    "guard-for-in": "off",
+    "arrow-parens": ["off"],
+    "no-await-in-loop": "off",
+    "no-console": "off",
+    "class-methods-use-this": "off",
+    "no-restricted-syntax": [
+      "error",
+      {
+        "selector": "LabeledStatement",
+        "message": "Labels are a form of GOTO; using them makes code confusing and hard to maintain and understand."
+      },
+      {
+        "selector": "WithStatement",
+        "message": "`with` is disallowed in strict mode because it makes code impossible to predict and optimize."
+      }
+    ]
+  }
+}
