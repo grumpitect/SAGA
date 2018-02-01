@@ -1,3 +1,7 @@
+const _ = require('lodash');
+const moment = require('moment');
+const utils = require('./utils');
+
 let value = 0;
 
 const t1 = async (params) => {
@@ -66,24 +70,28 @@ const saga1 = {
   ],
 };
 
+// todo: implement this using Mongo
 class SagaLogger {
   constructor() {
     this.logs = {};
   }
 
-  create(sagaId) {
+  find(logId) {
+
+  }
+
+  create() {
     // read from db and store it in cache
-    this.logs[sagaId] = this.logs[sagaId] || [];
+    this.logs[newId] = this.logs[newId] || [];
 
     return {
       read: () => {
         // read from cache
-        return this.logs[sagaId];
+        return this.logs[newId];
       },
       log: (data) => {
         // add to db and cache and include log-date
-        this.logs[sagaId].push(data);
-        console.log(`${sagaId}`, data);
+        this.logs[newId].push(data);
       },
     };
   }
@@ -113,11 +121,6 @@ const STAGE_PENDING = 'STAGE_PENDING';
 const STAGE_COMPLETED = 'STAGE_COMPLETED';
 
 class SagaExecutionCoordinator {
-  constructor(id, sagaLogger) {
-    this.id = id;
-    this.sagaLogger = sagaLogger;
-  }
-
   async prepareParams(saga, initalParams, logs) {
     const flow = {};
 
@@ -213,8 +216,7 @@ class SagaExecutionCoordinator {
     };
   }
 
-  async execute(saga, initalParams) {
-    const logger = await this.sagaLogger.create(saga.id);
+  async execute(saga, initalParams, logger) {
     const logs = await logger.read();
     const transactionLogs = logs.filter(log => log.transaction);
     const compensationLogs = logs.filter(log => log.compensation);
@@ -388,27 +390,411 @@ class SagaExecutionCoordinator {
   }
 }
 
-const sec = new SagaExecutionCoordinator('SEC#1', new SagaLogger());
+const ALIVE_TIME_OUT = 5; // seconds
+const LOCK_ACQUISITION_RETRY_TIMEOUT = 100; // milliseconds
+const QUEUE_STATE_RUNNING = 'running';
+const QUEUE_STATE_ZOMBIE = 'zombie';
 
-(async () => {
-  const params = {
-    x: 1,
-    y: 2,
-    z: 3,
-  };
-  const r1 = await sec.execute(saga1, params);
-  console.log('r1', r1);
-  const rAgain = await sec.execute(saga1, params);
+class SagaRunner {
+  constructor({
+    name,
+    sagaList,
+    collections,
+  }) {
+    if (!collections) {
+      throw new Error('collections parameter is required.');
+    }
 
-  if ((r1.isRollback && !r1.isSuccess) || (r1.isTransaction && !r1.isSuccess)) {
-    const r2 = await sec.execute(saga1, params);
-    console.log('r2', r2);
+    if (!utils.isMongoCollection(collections.runners)) {
+      throw new Error('collections parameter must have `runners` property of type `MongoDB Collection`');
+    }
 
-    if (r2.isRollback && !r2.isSuccess) {
-      const r3 = await sec.execute(saga1, params);
-      console.log('r3', r3);
+    if (!utils.isMongoCollection(collections.queue)) {
+      throw new Error('collections parameter must have `queue` property of type `MongoDB Collection`');
+    }
+
+    if (!utils.isMongoCollection(collections.logs)) {
+      throw new Error('collections parameter must have `logs` property of type `MongoDB Collection`');
+    }
+
+    if (!utils.isMongoCollection(collections.locks)) {
+      throw new Error('collections parameter must have `locks` property of type `MongoDB Collection`');
+    }
+
+    if (!name || !_.isString(name)) {
+      throw new Error('SagaQueue constructor needs parameter `name` of type `String`');
+    }
+
+    if (!sagaList || !_.isArray(sagaList)) {
+      throw new Error('SagaQueue constructor needs parameter `sagaList` of type `Array`');
+    }
+
+    this.name = name;
+    this.sagaList = sagaList;
+    this.collections = collections;
+
+    this.sec = new SagaExecutionCoordinator();
+    this.sagaLogger = new SagaLogger();
+  }
+
+  async initalize() {
+    const {
+      locks,
+      queue,
+    } = this.collections;
+
+    await locks.createIndex({
+      runner: 1,
+      isPending: 1,
+    }, {
+      unique: true,
+    });
+
+    await locks.createIndex({
+      isAcquired: 1,
+    }, {
+      unique: true,
+      partialFilterExpression: {
+        isAcquired: { $exists: true },
+      },
+    });
+
+    await queue.createIndex({
+      key: 1,
+      sagaId: 1,
+    }, {
+      unique: true,
+    });
+  }
+
+  async updateLastUpdate() {
+    const {
+      runners,
+    } = this.collections;
+
+    return runners.findAndModify({
+      name: this.name,
+    }, [], {
+      $currentDate: {
+        lastUpdate: true,
+      },
+      $set: {
+        name: this.name,
+      },
+    }, {
+      upsert: true,
+    });
+  }
+
+  async acquireLock() {
+    const {
+      locks,
+      runners,
+    } = this.collections;
+
+    const loop = utils.createConditionalLoop(async (next, finish) => {
+      await this.updateLastUpdate();
+
+      // add this runner as pending (waiting to acuire lock)
+      // maybe we are already in the queue, in that case an exception would be thrown because of the index
+      try {
+        await locks.insertOne({
+          runner: this.name,
+          isPending: true,
+          requestedDate: new Date(),
+        });
+      } catch (ex) {
+        ex.toString(); // do nothing, we are already in the lock queue
+      }
+
+      const acquirer = await locks.findOne({
+        isAcquired: true,
+      });
+
+      if (acquirer) {
+        const runner = await runners.findOne({
+          name: acquirer.runner,
+        });
+
+        const aliveTimeOut = moment().subtract(ALIVE_TIME_OUT, 'seconds');
+        const runnerLastUpdate = moment(runner.lastUpdate);
+
+        if (runnerLastUpdate.isBefore(aliveTimeOut)) { // the runner is dead, so remove it from the lock
+          await locks.deleteOne({
+            runner: acquirer.runner,
+          });
+        }
+
+        return next();
+      }
+
+      // try to acuire lock
+      let newAcquirer = null;
+      try {
+        newAcquirer = await locks.findAndModify({
+          isPending: true,
+        }, [['requestedDate', 'asc']], {
+          $set: {
+            isAcquired: true,
+          },
+        }, {
+          new: true,
+        });
+      } catch (ex) {
+        ex.toString();
+      }
+
+      if (newAcquirer && newAcquirer.value.runner === this.name) {
+        return finish();
+      }
+
+      return next();
+    }, LOCK_ACQUISITION_RETRY_TIMEOUT);
+
+    return loop.start();
+  }
+
+  async releaseLock() {
+    const {
+      locks,
+    } = this.collections;
+
+    return locks.deleteOne({
+      runner: this.name,
+    });
+  }
+
+  async runWithinLock(callback) {
+    await this.acquireLock();
+
+    try {
+      return callback();
+    } finally {
+      await this.releaseLock();
     }
   }
 
-  console.log(rAgain, value);
-})();
+  async markZombiesAndGetOne() {
+    await this.markAsRunning(zombie.sagaId);
+
+    try {
+      return this.runWithinLock(async () => {
+
+      });
+    } catch (ex) {
+      console.log(ex);
+    }
+
+    return null;
+  }
+
+  async markAsZombie(sagaId) {
+
+  }
+
+  async unqueueSaga(sagaId) {
+    this.runWithinLock(async () => {
+
+    });
+  }
+
+  async enqueue(sagaId, initalParams, key) {
+    return this.runWithinLock(async () => {
+      const {
+        queue,
+        logs,
+      } = this.collections;
+
+      const insertLogResult = await logs.insertOne({
+        items: [],
+      });
+      const logId = insertLogResult.insertedId;
+
+      // maybe we already have this saga and this key added to the queue
+      // so the index would prevent re-adding it
+      try {
+        await queue.insertOne({
+          key,
+          sagaId,
+          initalParams,
+          logId,
+          runner: this.name,
+          state: QUEUE_STATE_RUNNING,
+        });
+
+        return {
+          logId,
+        };
+      } catch (ex) {
+        ex.toString();
+
+        await logs.deleteOne({
+          _id: logId,
+        });
+      }
+
+      return null;
+    });
+  }
+
+  async execute(sagaId, initalParams, key) {
+    const saga = _.find(this.sagaList, item => item.id === sagaId);
+
+    utils.validateSaga(saga);
+
+    const queueItem = await this.enqueue(sagaId, initalParams, key);
+
+    if (queueItem) {
+      const logger = await this.sagaLogger.find(queueItem.logId);
+      const result = await this.sec.execute(
+        saga,
+        initalParams,
+        logger,
+      );
+
+      if (result.isSuccess) {
+        await this.unqueueSaga(sagaId);
+      } else {
+        await this.markAsZombie(sagaId);
+      }
+
+      return result;
+    }
+
+    return {
+      isFailed: true,
+      duplicateKey: true,
+    };
+  }
+
+  async cleanupLogs() {
+    const {
+      logs,
+    } = this.collections;
+
+    // find logs that are not in the queue
+    const orphanLogs = await logs.aggregate([
+      {
+        $lookup: {
+          from: 'queue',
+          localField: '_id',
+          foreignField: 'logId',
+          as: 'queue',
+        },
+      },
+      {
+        $match: {
+          queue: {
+            $size: 0,
+          },
+        },
+      },
+      {
+        $project: {
+          _id: 1,
+        },
+      },
+    ]).toArray();
+
+    const orphanLogIds = orphanLogs.map(log => log._id);
+
+    await logs.deleteMany({
+      _id: {
+        $in: orphanLogIds,
+      },
+    });
+  }
+
+  start() {
+    const aliveLoop = utils.createEndlessLoop(async () => {
+      await this.updateLastUpdate();
+    }, 500);
+
+    const cleanupLoop = utils.createEndlessLoop(async () => {
+      await this.cleanupLogs();
+
+      const zombie = await this.markZombiesAndGetOne();
+
+      if (zombie) {
+        const logger = await this.sagaLogger.find(zombie.logId);
+        const saga = _.find(this.sagaList, item => item.id === zombie.sagaId);
+
+        const result = await this.sec.execute(
+          saga,
+          zombie.sagaInitalParams,
+          logger,
+        );
+
+        if (result.isSuccess) {
+          await this.unqueueSaga(zombie.sagaId);
+        } else {
+          await this.markAsZombie(zombie.sagaId);
+        }
+      }
+    }, 500);
+
+    aliveLoop.start();
+    cleanupLoop.start();
+  }
+}
+
+const { MongoClient } = require('mongodb');
+
+MongoClient.connect('mongodb://localhost:27017', (err, client) => {
+  const db = client.db('synapse-saga');
+  const runners = db.collection('runners');
+  const queue = db.collection('queue');
+  const logs = db.collection('logs');
+  const locks = db.collection('locks');
+
+  (async () => {
+    const sagaList = [saga1];
+
+    const runner1 = new SagaRunner({
+      name: 'runner1',
+      sagaList,
+      collections: {
+        runners,
+        queue,
+        logs,
+        locks,
+      },
+    });
+
+    await runner1.initalize();
+    await runner1.execute(saga1.id, {
+      x: 1,
+      y: 2,
+    }, 'myKey');
+
+    // runner1.start();
+
+    // const runner2 = new SagaRunner('runner2');
+    // runner2.start();
+
+    // await runner1.execute(saga1, 'myKey');
+  })();
+});
+
+// (async () => {
+//   const params = {
+//     x: 1,
+//     y: 2,
+//     z: 3,
+//   };
+//   const r1 = await sec.execute(saga1, params);
+//   console.log('r1', r1);
+//   const rAgain = await sec.execute(saga1, params);
+
+//   if ((r1.isRollback && !r1.isSuccess) || (r1.isTransaction && !r1.isSuccess)) {
+//     const r2 = await sec.execute(saga1, params);
+//     console.log('r2', r2);
+
+//     if (r2.isRollback && !r2.isSuccess) {
+//       const r3 = await sec.execute(saga1, params);
+//       console.log('r3', r3);
+//     }
+//   }
+
+//   console.log(rAgain, value);
+// })();
