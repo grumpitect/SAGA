@@ -7,7 +7,11 @@ let value = 0;
 const t1 = async (params) => {
   value += params.inital.x;
 
-  return 44;
+  return new Promise((resolve, reject) => {
+    setTimeout(() => {
+      resolve(44);
+    }, 2000 * 2000);
+  });
 };
 
 let c = 0;
@@ -900,7 +904,7 @@ MongoClient.connect('mongodb://localhost:27017', (err, client) => {
     //   x: 1,
     //   y: 2,
     // }, 'myKey');
-    runner1.start();
+    // runner1.start();
     const t = await runner1.execute(saga1.id, {
       x: 1,
       y: 2,
@@ -908,8 +912,19 @@ MongoClient.connect('mongodb://localhost:27017', (err, client) => {
 
     t.toString();
 
-    // const runner2 = new SagaRunner('runner2');
-    // runner2.start();
+    const runner2 = new SagaRunner({
+      name: 'runner2',
+      sagaList,
+      collections: {
+        runners,
+        queue,
+        logs,
+        locks,
+      },
+    });
+
+    await runner2.initalize();
+    runner2.start();
   })();
 });
 
