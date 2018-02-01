@@ -212,52 +212,14 @@ class SagaRunner {
         queue,
       } = this.collections;
 
-      const aliveTimeOut = moment().subtract(this.aliveTimeOut, 'seconds').toDate();
-
-      const orphanQueueItems = await queue.aggregate([
-        {
-          $lookup: {
-            from: 'runners',
-            localField: 'runner',
-            foreignField: 'name',
-            as: 'runner',
-          },
+      const orphanQueueItems = await queue.find({
+        runner: this.name,
+        instanceId: {
+          $ne: this.instanceId,
         },
-        {
-          $match: {
-            state: QUEUE_STATE_RUNNING,
-            $or: [
-              {
-                runner: {
-                  $elemMatch: {
-                    lastUpdate: {
-                      $lt: aliveTimeOut,
-                    },
-                  },
-                },
-              },
-              {
-                runner: {
-                  $elemMatch: {
-                    name: this.name,
-                  },
-                },
-                instanceId: {
-                  $ne: this.instanceId,
-                },
-              },
-            ],
-          },
-        },
-        {
-          $limit: 10,
-        },
-        {
-          $project: {
-            _id: 1,
-          },
-        },
-      ]).toArray();
+      }, {
+        _id: 1,
+      }).limit(10).toArray();
 
       const zombieIds = orphanQueueItems.map(item => item._id);
       await queue.updateMany({
@@ -437,6 +399,9 @@ class SagaRunner {
             $size: 0,
           },
         },
+      },
+      {
+        $limit: 10,
       },
       {
         $project: {
