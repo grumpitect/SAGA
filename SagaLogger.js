@@ -1,4 +1,13 @@
 class SagaLogger {
+  async create(logsCollection) {
+    const insertLogResult = await logsCollection.insertOne({
+      createdDate: new Date(),
+      items: [],
+    });
+
+    return insertLogResult.insertedId;
+  }
+
   async find(logsCollection, logId) {
     const dbLog = await logsCollection.findOne({
       _id: logId,

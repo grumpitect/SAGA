@@ -3,8 +3,11 @@ const SagaRunner = require('./SagaRunner');
 
 module.exports = {
   async initalize({
-    aliveTimeOut = 5, // seconds
+    aliveLoopTimeout = 500, // milliseconds
+    cleanUpLoopTimeout = 500, // milliseconds
+    lockHoldTimeout = 1000, // milliseconds
     lockAcquisitionRetryTimeout = 100, // milliseconds
+    keepLogsFor = 6 * 31, // days
     name,
     sagaList,
     mongoUrl,
@@ -18,8 +21,11 @@ module.exports = {
     const locks = db.collection('locks');
 
     const runner = new SagaRunner({
-      aliveTimeOut,
+      aliveLoopTimeout,
+      cleanUpLoopTimeout,
+      lockHoldTimeout,
       lockAcquisitionRetryTimeout,
+      keepLogsFor,
       name,
       sagaList,
       collections: {

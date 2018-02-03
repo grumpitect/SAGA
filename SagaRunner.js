@@ -9,8 +9,11 @@ const QUEUE_STATE_ZOMBIE = 'zombie';
 
 class SagaRunner {
   constructor({
-    aliveTimeOut, // seconds
+    aliveLoopTimeout, // milliseconds
+    cleanUpLoopTimeout, // milliseconds
+    lockHoldTimeout, // milliseconds
     lockAcquisitionRetryTimeout, // milliseconds
+    keepLogsFor, // days
     name,
     sagaList,
     collections,
@@ -43,8 +46,11 @@ class SagaRunner {
       throw new Error('SagaQueue constructor needs parameter `sagaList` of type `Array`');
     }
 
+    this.aliveLoopTimeout = aliveLoopTimeout;
+    this.cleanUpLoopTimeout = cleanUpLoopTimeout;
+    this.lockHoldTimeout = lockHoldTimeout;
     this.lockAcquisitionRetryTimeout = lockAcquisitionRetryTimeout;
-    this.aliveTimeOut = aliveTimeOut;
+    this.keepLogsFor = keepLogsFor;
     this.instanceId = new Date().getTime();
     this.name = name;
     this.sagaList = sagaList;
@@ -133,11 +139,11 @@ class SagaRunner {
           name: acquirer.runner,
         });
 
-        const aliveTimeOut = moment().subtract(this.aliveTimeOut, 'seconds');
+        const lockHoldTimeout = moment().subtract(this.lockHoldTimeout, 'milliseconds');
         const runnerLastUpdate = moment(runner.lastUpdate);
 
         if (
-          runnerLastUpdate.isBefore(aliveTimeOut) ||
+          runnerLastUpdate.isBefore(lockHoldTimeout) ||
           (acquirer.runner === this.name && acquirer.instanceId !== this.instanceId)
         ) {
           // the runner is dead, so remove it from the lock
@@ -262,19 +268,15 @@ class SagaRunner {
     });
   }
 
-  async unqueueSaga(queueItemId, logId) {
+  async unqueueSaga(queueItemId) {
     await this.runWithinLock(async () => {
       const {
         queue,
-        logs,
       } = this.collections;
 
       await Promise.all([
         queue.deleteOne({
           _id: queueItemId,
-        }),
-        logs.deleteOne({
-          _id: logId,
         }),
       ]);
     });
@@ -287,10 +289,7 @@ class SagaRunner {
         logs,
       } = this.collections;
 
-      const insertLogResult = await logs.insertOne({
-        items: [],
-      });
-      const logId = insertLogResult.insertedId;
+      const logId = await this.sagaLogger.create(logs);
 
       // maybe we already have this saga and this key added to the queue
       // so the index would prevent re-adding it
@@ -370,7 +369,7 @@ class SagaRunner {
     );
 
     if (result.isSuccess) {
-      await this.unqueueSaga(queueItemId, logId);
+      await this.unqueueSaga(queueItemId);
     } else {
       await this.markAsZombie(queueItemId);
     }
@@ -383,8 +382,19 @@ class SagaRunner {
       logs,
     } = this.collections;
 
-    // find logs that are not in the queue
+    const keepLogsTill = moment().add(-this.keepLogsFor, 'days').toDate();
+
     const orphanLogs = await logs.aggregate([
+      {
+        $match: {
+          createdDate: {
+            $lt: keepLogsTill,
+          },
+        },
+      },
+      {
+        $limit: 10,
+      },
       {
         $lookup: {
           from: 'queue',
@@ -399,9 +409,6 @@ class SagaRunner {
             $size: 0,
           },
         },
-      },
-      {
-        $limit: 10,
       },
       {
         $project: {
@@ -426,7 +433,7 @@ class SagaRunner {
 
     const aliveLoop = utils.createEndlessLoop(async () => {
       await this.updateLastUpdate();
-    }, 500);
+    }, this.aliveLoopTimeout);
 
     const cleanupLoop = utils.createEndlessLoop(async () => {
       await this.cleanupLogs();
@@ -444,7 +451,7 @@ class SagaRunner {
           logId: zombie.logId,
         });
       }
-    }, 500);
+    }, this.cleanUpLoopTimeout);
 
     aliveLoop.start();
     cleanupLoop.start();
