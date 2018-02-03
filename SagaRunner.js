@@ -7,6 +7,8 @@ const SagaLogger = require('./SagaLogger');
 const QUEUE_STATE_RUNNING = 'running';
 const QUEUE_STATE_ZOMBIE = 'zombie';
 
+// todo: we need a monitor to restart this service if it stocks (very rare case)
+
 class SagaRunner {
   constructor({
     aliveLoopTimeout, // milliseconds
