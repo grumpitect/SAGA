@@ -362,7 +362,6 @@ class SagaRunner {
     initalParams,
     logger,
     queueItemId,
-    logId,
   }) {
     const result = await this.sec.execute(
       saga,
