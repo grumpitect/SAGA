@@ -62,7 +62,7 @@ class SagaRunner {
     this.sagaLogger = new SagaLogger();
   }
 
-  async initalize() {
+  async initialize() {
     const {
       locks,
       queue,
@@ -284,7 +284,7 @@ class SagaRunner {
     });
   }
 
-  async enqueue(sagaId, initalParams, key) {
+  async enqueue(sagaId, initialParams, key) {
     return this.runWithinLock(async () => {
       const {
         queue,
@@ -299,7 +299,7 @@ class SagaRunner {
         const insertQueueItemResult = await queue.insertOne({
           key,
           sagaId,
-          initalParams,
+          initialParams,
           logId,
           runner: this.name,
           instanceId: this.instanceId,
@@ -322,20 +322,20 @@ class SagaRunner {
     });
   }
 
-  async execute(sagaId, initalParams, key) {
+  async execute(sagaId, initialParams, key) {
     const saga = _.find(this.sagaList, item => item.id === sagaId);
 
     utils.validateSaga(saga);
 
-    if (!initalParams || !_.isPlainObject(initalParams)) {
-      throw new Error('initalParams must be of type `PlainObject`');
+    if (!initialParams || !_.isPlainObject(initialParams)) {
+      throw new Error('initialParams must be of type `PlainObject`');
     }
 
     if (!key || !_.isString(key)) {
       throw new Error('key must be of type `String`');
     }
 
-    const queueItem = await this.enqueue(sagaId, initalParams, key);
+    const queueItem = await this.enqueue(sagaId, initialParams, key);
     if (queueItem) {
       const {
         logs,
@@ -344,7 +344,7 @@ class SagaRunner {
 
       return this.runSaga({
         saga,
-        initalParams,
+        initialParams,
         logger,
         queueItemId: queueItem._id,
         logId: queueItem.logId,
@@ -359,13 +359,13 @@ class SagaRunner {
 
   async runSaga({
     saga,
-    initalParams,
+    initialParams,
     logger,
     queueItemId,
   }) {
     const result = await this.sec.execute(
       saga,
-      initalParams,
+      initialParams,
       logger,
     );
 
@@ -447,7 +447,7 @@ class SagaRunner {
         await this.runSaga({
           saga,
           logger,
-          initalParams: zombie.initalParams,
+          initialParams: zombie.initialParams,
           queueItemId: zombie._id,
           logId: zombie.logId,
         });

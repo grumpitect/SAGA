@@ -2,7 +2,7 @@ const { MongoClient } = require('mongodb');
 const SagaRunner = require('./SagaRunner');
 
 module.exports = {
-  async initalize({
+  async initialize({
     aliveLoopTimeout = 500, // milliseconds
     cleanUpLoopTimeout = 500, // milliseconds
     lockHoldTimeout = 1000, // milliseconds
@@ -37,7 +37,7 @@ module.exports = {
       },
     });
 
-    await runner.initalize();
+    await runner.initialize();
 
     return runner;
   },

@@ -22,7 +22,7 @@ const STAGE_PENDING = 'STAGE_PENDING';
 const STAGE_COMPLETED = 'STAGE_COMPLETED';
 
 class SagaExecutionCoordinator {
-  async prepareParams(saga, initalParams, logs) {
+  async prepareParams(saga, initialParams, logs) {
     const flow = {};
 
     for (const log of logs) {
@@ -64,7 +64,7 @@ class SagaExecutionCoordinator {
     }
 
     const params = Object.assign({}, {
-      inital: initalParams,
+      initial: initialParams,
       flow,
     });
 
@@ -125,7 +125,7 @@ class SagaExecutionCoordinator {
 
   // todo: when you want to compensate you have to first run the transaction successfully and then
   // use the data to compensate the transaction
-  async execute(saga, initalParams, logger) {
+  async execute(saga, initialParams, logger) {
     const logs = await logger.read();
     const transactionLogs = logs.filter(log => log.transaction);
     const compensationLogs = logs.filter(log => log.compensation);
@@ -149,7 +149,7 @@ class SagaExecutionCoordinator {
 
       result = await this.rollback({
         saga,
-        initalParams,
+        initialParams,
         logger,
         fromStep: rollbackHasBegin ? rollbackFromStep : transactionFromStep,
         hasBegin: rollbackHasBegin,
@@ -159,7 +159,7 @@ class SagaExecutionCoordinator {
     } else {
       result = await this.continue({
         saga,
-        initalParams,
+        initialParams,
         logger,
         fromStep: transactionFromStep,
         hasBegin: transactionHasBegin,
@@ -168,13 +168,13 @@ class SagaExecutionCoordinator {
     }
 
     return Object.assign(result, {
-      params: await this.prepareParams(saga, initalParams, await logger.read()),
+      params: await this.prepareParams(saga, initialParams, await logger.read()),
     });
   }
 
   async continue({
     saga,
-    initalParams,
+    initialParams,
     logger,
     fromStep,
     hasBegin,
@@ -198,7 +198,7 @@ class SagaExecutionCoordinator {
           step,
         });
 
-        const params = await this.prepareParams(saga, initalParams, await logger.read());
+        const params = await this.prepareParams(saga, initialParams, await logger.read());
         const result = await transaction(params);
 
         await logger.log({
@@ -218,7 +218,7 @@ class SagaExecutionCoordinator {
 
         return this.rollback({
           saga,
-          initalParams,
+          initialParams,
           logger,
           fromStep: step - 1,
         });
@@ -237,7 +237,7 @@ class SagaExecutionCoordinator {
 
   async rollback({
     saga,
-    initalParams,
+    initialParams,
     logger,
     fromStep,
     hasBegin,
@@ -263,7 +263,7 @@ class SagaExecutionCoordinator {
           });
         }
 
-        const params = await this.prepareParams(saga, initalParams, await logger.read());
+        const params = await this.prepareParams(saga, initialParams, await logger.read());
         const result = await compensation(params);
 
         await logger.log({
