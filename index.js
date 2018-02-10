@@ -11,9 +11,10 @@ module.exports = {
     name,
     sagaList,
     mongoUrl,
+    mongoDBName,
   }) {
     const client = await MongoClient.connect(mongoUrl);
-    const db = client.db('synapse-saga');
+    const db = client.db(mongoDBName);
 
     const runners = db.collection('runners');
     const queue = db.collection('queue');
