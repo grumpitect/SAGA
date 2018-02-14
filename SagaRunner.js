@@ -85,8 +85,8 @@ class SagaRunner {
     });
 
     await queue.createIndex({
-      key: 1,
-      sagaId: 1,
+      keys: 1,
+      // sagaId: 1,
     }, {
       unique: true,
     });
@@ -284,7 +284,7 @@ class SagaRunner {
     });
   }
 
-  async enqueue(sagaId, initialParams, key) {
+  async enqueue(sagaId, initialParams, keys) {
     return this.runWithinLock(async () => {
       const {
         queue,
@@ -297,7 +297,7 @@ class SagaRunner {
       // so the index would prevent re-adding it
       try {
         const insertQueueItemResult = await queue.insertOne({
-          key,
+          keys,
           sagaId,
           initialParams,
           logId,
@@ -322,7 +322,7 @@ class SagaRunner {
     });
   }
 
-  async execute(sagaId, initialParams, key) {
+  async execute(sagaId, initialParams, keys) {
     const saga = _.find(this.sagaList, item => item.id === sagaId);
 
     utils.validateSaga(saga);
@@ -331,11 +331,11 @@ class SagaRunner {
       throw new Error('initialParams must be of type `PlainObject`');
     }
 
-    if (!key || !_.isString(key)) {
-      throw new Error('key must be of type `String`');
+    if (!keys || !_.isArray(keys) || !_.find(keys, item => item)) {
+      throw new Error('key must be of type `Array` with at least one item');
     }
 
-    const queueItem = await this.enqueue(sagaId, initialParams, key);
+    const queueItem = await this.enqueue(sagaId, initialParams, keys);
     if (queueItem) {
       const {
         logs,
