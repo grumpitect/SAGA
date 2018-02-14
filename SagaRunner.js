@@ -176,7 +176,7 @@ class SagaRunner {
         ex.toString();
       }
 
-      if (newAcquirer && newAcquirer.value.runner === this.name) {
+      if (newAcquirer && newAcquirer.value && newAcquirer.value.runner === this.name) {
         await locks.findOneAndUpdate({
           runner: this.name,
         }, {
