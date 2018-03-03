@@ -65,7 +65,6 @@ class SagaRunner {
   async initialize() {
     const {
       locks,
-      queue,
     } = this.collections;
 
     await locks.createIndex({
@@ -82,13 +81,6 @@ class SagaRunner {
       partialFilterExpression: {
         isAcquired: { $exists: true },
       },
-    });
-
-    await queue.createIndex({
-      keys: 1,
-      // sagaId: 1,
-    }, {
-      unique: true,
     });
   }
 
@@ -284,7 +276,7 @@ class SagaRunner {
     });
   }
 
-  async enqueue(sagaId, initialParams, keys) {
+  async enqueue(sagaId, initialParams, keys, stopKeys) {
     return this.runWithinLock(async () => {
       const {
         queue,
@@ -293,36 +285,38 @@ class SagaRunner {
 
       const logId = await this.sagaLogger.create(logs);
 
-      // maybe we already have this saga and this key added to the queue
-      // so the index would prevent re-adding it
-      try {
-        const insertQueueItemResult = await queue.insertOne({
-          keys,
-          sagaId,
-          initialParams,
-          logId,
-          runner: this.name,
-          instanceId: this.instanceId,
-          state: QUEUE_STATE_RUNNING,
-        });
+      const stopItem = await queue.findOne({
+        keys: {
+          $in: stopKeys,
+        },
+      });
 
-        return {
-          _id: insertQueueItemResult.insertedId,
-          logId,
-        };
-      } catch (ex) {
-        ex.toString();
-
+      if (stopItem) {
         await logs.deleteOne({
           _id: logId,
         });
+
+        return null;
       }
 
-      return null;
+      const insertQueueItemResult = await queue.insertOne({
+        keys,
+        sagaId,
+        initialParams,
+        logId,
+        runner: this.name,
+        instanceId: this.instanceId,
+        state: QUEUE_STATE_RUNNING,
+      });
+
+      return {
+        _id: insertQueueItemResult.insertedId,
+        logId,
+      };
     });
   }
 
-  async execute(sagaId, initialParams, keys) {
+  async execute(sagaId, initialParams, keys, stopKeys) {
     const saga = _.find(this.sagaList, item => item.id === sagaId);
 
     utils.validateSaga(saga);
@@ -335,7 +329,7 @@ class SagaRunner {
       throw new Error('key must be of type `Array` with at least one item');
     }
 
-    const queueItem = await this.enqueue(sagaId, initialParams, keys);
+    const queueItem = await this.enqueue(sagaId, initialParams, keys, stopKeys);
     if (queueItem) {
       const {
         logs,
