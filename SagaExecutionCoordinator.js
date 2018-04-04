@@ -70,7 +70,8 @@ class SagaExecutionCoordinator {
     let mergedTransactionValues = {};
     let mergedCompensationValues = {};
 
-    for (const tc of flow) {
+    for (const tcId in flow) {
+      const tc = flow[tcId];
       if (tc.transaction && tc.transaction.value) {
         mergedTransactionValues = _.merge(mergedTransactionValues, tc.transaction.value);
       } else if (tc.compensation && tc.compensation.value) {
