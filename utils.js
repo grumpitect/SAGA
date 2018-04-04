@@ -4,6 +4,11 @@ const {
 } = require('mongodb');
 
 const utils = {
+  wait: (timeout) => {
+    return new Promise((resolve) => {
+      setTimeout(resolve, timeout);
+    });
+  },
   createEndlessLoop(callback, timeout) {
     return utils.createConditionalLoop(async next => {
       await callback();

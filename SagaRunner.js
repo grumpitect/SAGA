@@ -16,6 +16,10 @@ class SagaRunner {
     lockHoldTimeout, // milliseconds
     lockAcquisitionRetryTimeout, // milliseconds
     keepLogsFor, // days
+    waitInsteadOfStopDuration, // milliseconds
+    rollbackRetryWarningThreshold, // count
+    rollbackWaitTimeout, // milliseconds
+    onTooManyRollbackAttempts, // callback
     name,
     sagaList,
     collections,
@@ -53,6 +57,10 @@ class SagaRunner {
     this.lockHoldTimeout = lockHoldTimeout;
     this.lockAcquisitionRetryTimeout = lockAcquisitionRetryTimeout;
     this.keepLogsFor = keepLogsFor;
+    this.waitInsteadOfStopDuration = waitInsteadOfStopDuration;
+    this.rollbackRetryWarningThreshold = rollbackRetryWarningThreshold;
+    this.rollbackWaitTimeout = rollbackWaitTimeout;
+    this.onTooManyRollbackAttempts = onTooManyRollbackAttempts;
     this.instanceId = new Date().getTime();
     this.name = name;
     this.sagaList = sagaList;
@@ -283,8 +291,6 @@ class SagaRunner {
         logs,
       } = this.collections;
 
-      const logId = await this.sagaLogger.create(logs);
-
       const stopItem = await queue.findOne({
         keys: {
           $in: stopKeys,
@@ -292,12 +298,10 @@ class SagaRunner {
       });
 
       if (stopItem) {
-        await logs.deleteOne({
-          _id: logId,
-        });
-
         return null;
       }
+
+      const logId = await this.sagaLogger.create(logs);
 
       const insertQueueItemResult = await queue.insertOne({
         keys,
@@ -316,7 +320,13 @@ class SagaRunner {
     });
   }
 
-  async execute(sagaId, initialParams, keys, stopKeys) {
+  async execute({
+    sagaId,
+    initialParams,
+    keys,
+    stopKeys,
+    waitInsteadOfStop,
+  }) {
     const saga = _.find(this.sagaList, item => item.id === sagaId);
 
     utils.validateSaga(saga);
@@ -327,6 +337,10 @@ class SagaRunner {
 
     if (!keys || !_.isArray(keys) || !_.find(keys, item => item)) {
       throw new Error('key must be of type `Array` with at least one item');
+    }
+
+    if (!stopKeys || !_.isArray(stopKeys)) {
+      throw new Error('stopKeys must be of type `Array`');
     }
 
     const queueItem = await this.enqueue(sagaId, initialParams, keys, stopKeys);
@@ -345,6 +359,26 @@ class SagaRunner {
       });
     }
 
+    if (waitInsteadOfStop) {
+      const loop = utils.createConditionalLoop(async (next, finish) => {
+        const result = await this.execute({
+          sagaId,
+          initialParams,
+          keys,
+          stopKeys,
+          waitInsteadOfStop: false,
+        });
+
+        if (result.duplicateKey) {
+          return next();
+        }
+
+        return finish(result);
+      }, this.waitInsteadOfStopDuration);
+
+      return loop.start();
+    }
+
     return {
       isFailed: true,
       duplicateKey: true,
@@ -357,11 +391,14 @@ class SagaRunner {
     logger,
     queueItemId,
   }) {
-    const result = await this.sec.execute(
+    const result = await this.sec.execute({
       saga,
       initialParams,
       logger,
-    );
+      rollbackRetryWarningThreshold: this.rollbackRetryWarningThreshold,
+      rollbackWaitTimeout: this.rollbackWaitTimeout,
+      onTooManyRollbackAttempts: this.onTooManyRollbackAttempts,
+    });
 
     if (result.isSuccess) {
       await this.unqueueSaga(queueItemId);

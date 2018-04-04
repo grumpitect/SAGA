@@ -1,3 +1,7 @@
+const _ = require('lodash');
+const utils = require('./utils');
+const FinishSaga = require('./ValueTypes/FinishSaga');
+
 const BEGIN_SAGA_TRANSACTIONS = {
   transaction: true,
   isBegin: true,
@@ -63,9 +67,22 @@ class SagaExecutionCoordinator {
       }
     }
 
+    let mergedTransactionValues = {};
+    let mergedCompensationValues = {};
+
+    for (const tc of flow) {
+      if (tc.transaction && tc.transaction.value) {
+        mergedTransactionValues = _.merge(mergedTransactionValues, tc.transaction.value);
+      } else if (tc.compensation && tc.compensation.value) {
+        mergedCompensationValues = _.merge(mergedCompensationValues, tc.compensation.value);
+      }
+    }
+
     const params = Object.assign({}, {
-      initial: initialParams,
       flow,
+      initial: initialParams,
+      transactionValues: mergedTransactionValues,
+      compensationValues: mergedCompensationValues,
     });
 
     return params;
@@ -78,6 +95,7 @@ class SagaExecutionCoordinator {
     let lastStage = null;
     let stageCompleted = true;
     let currentStep = -1;
+    const pendingStepCounts = {};
 
     const logsLength = logs.length;
     for (let i = 0; i < logsLength; i += 1) {
@@ -86,6 +104,12 @@ class SagaExecutionCoordinator {
       if (log.isStep) {
         if (log.stage === STAGE_PENDING) {
           stageCompleted = false;
+          pendingStepCounts[log.step] = pendingStepCounts[log.step] || {
+            log,
+            count: 0,
+          };
+
+          pendingStepCounts[log.step].count += 1;
         } else if (lastStage === STAGE_PENDING && log.stage === STAGE_COMPLETED) {
           stageCompleted = true;
         }
@@ -113,6 +137,8 @@ class SagaExecutionCoordinator {
       hasBegin,
       hasEnd,
       shouldRollback,
+      pendingStepCounts,
+      maxPendingStepCount: _.maxBy(pendingStepCounts, (psc) => psc.count) || { count: 0 },
       fromStep: shouldRollback ? currentStep : currentStep + 1,
     };
   }
@@ -125,7 +151,14 @@ class SagaExecutionCoordinator {
 
   // todo: when you want to compensate you have to first run the transaction successfully and then
   // use the data to compensate the transaction
-  async execute(saga, initialParams, logger) {
+  async execute({
+    saga,
+    initialParams,
+    logger,
+    rollbackRetryWarningThreshold,
+    rollbackWaitTimeout,
+    onTooManyRollbackAttempts,
+  }) {
     const logs = await logger.read();
     const transactionLogs = logs.filter(log => log.transaction);
     const compensationLogs = logs.filter(log => log.compensation);
@@ -145,7 +178,16 @@ class SagaExecutionCoordinator {
         hasEnd: rollbackHasEnd,
         hasPending: rollbackHasPending,
         fromStep: rollbackFromStep,
+        maxPendingStepCount,
       } = await this.analyze(saga, compensationLogs);
+
+      if (maxPendingStepCount.count >= rollbackRetryWarningThreshold) {
+        if (onTooManyRollbackAttempts) {
+          onTooManyRollbackAttempts(saga, logs);
+        }
+      }
+
+      await utils.wait(rollbackWaitTimeout * Math.min(1, maxPendingStepCount.count));
 
       result = await this.rollback({
         saga,
@@ -208,6 +250,10 @@ class SagaExecutionCoordinator {
           step,
           result,
         });
+
+        if (result instanceof FinishSaga) {
+          break;
+        }
       } catch (error) {
         await logger.log({
           transaction: true,

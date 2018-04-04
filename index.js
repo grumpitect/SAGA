@@ -1,13 +1,24 @@
 const { MongoClient } = require('mongodb');
 const SagaRunner = require('./SagaRunner');
 
+const TransactionValue = require('./ValueTypes/TransactionValue');
+const FinishSaga = require('./ValueTypes/FinishSaga');
+
 module.exports = {
+  valueTypes: {
+    TransactionValue,
+    FinishSaga,
+  },
   async initialize({
     aliveLoopTimeout = 500, // milliseconds
     cleanUpLoopTimeout = 500, // milliseconds
     lockHoldTimeout = 1000, // milliseconds
     lockAcquisitionRetryTimeout = 100, // milliseconds
     keepLogsFor = 6 * 31, // days
+    waitInsteadOfStopDuration = 1000, // milliseconds
+    rollbackRetryWarningThreshold = 2, // count
+    rollbackWaitTimeout = 1000, // milliseconds
+    onTooManyRollbackAttempts, // callback
     name,
     sagaList,
     mongoUrl,
@@ -27,6 +38,10 @@ module.exports = {
       lockHoldTimeout,
       lockAcquisitionRetryTimeout,
       keepLogsFor,
+      waitInsteadOfStopDuration,
+      rollbackRetryWarningThreshold,
+      rollbackWaitTimeout,
+      onTooManyRollbackAttempts,
       name,
       sagaList,
       collections: {
