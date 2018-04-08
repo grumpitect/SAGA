@@ -134,12 +134,14 @@ class SagaExecutionCoordinator {
     // todo: this is here because I'm too lazy to fix the code above
     shouldRollback = hasBegin && !hasEnd;
 
+    const max = _.maxBy(Object.values(pendingStepCounts), (psc) => psc.count) || { count: 0 };
+
     return {
       hasBegin,
       hasEnd,
       shouldRollback,
       pendingStepCounts,
-      maxPendingStepCount: _.maxBy(pendingStepCounts, (psc) => psc.count) || { count: 0 },
+      maxPendingStepCount: max,
       fromStep: shouldRollback ? currentStep : currentStep + 1,
     };
   }
@@ -184,7 +186,8 @@ class SagaExecutionCoordinator {
 
       if (maxPendingStepCount.count >= rollbackRetryWarningThreshold) {
         if (onTooManyRollbackAttempts) {
-          onTooManyRollbackAttempts(saga, logs);
+          const params = await this.prepareParams(saga, initialParams, logs);
+          onTooManyRollbackAttempts(saga, params, logs);
         }
       }
 
