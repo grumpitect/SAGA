@@ -22,9 +22,10 @@ module.exports = {
     name,
     sagaList,
     mongoUrl,
+    mongoOptions,
     mongoDBName,
   }) {
-    const client = await MongoClient.connect(mongoUrl);
+    const client = await MongoClient.connect(mongoUrl, mongoOptions);
     const db = client.db(mongoDBName);
 
     const runners = db.collection('runners');
