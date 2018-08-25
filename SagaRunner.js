@@ -73,6 +73,7 @@ class SagaRunner {
   async initialize() {
     const {
       locks,
+      logs,
     } = this.collections;
 
     await locks.createIndex({
@@ -89,6 +90,10 @@ class SagaRunner {
       partialFilterExpression: {
         isAcquired: { $exists: true },
       },
+    });
+
+    await logs.createIndex({
+      createdDate: 1,
     });
   }
 
@@ -451,11 +456,13 @@ class SagaRunner {
 
     const orphanLogIds = orphanLogs.map(log => log._id);
 
-    await logs.deleteMany({
-      _id: {
-        $in: orphanLogIds,
-      },
-    });
+    if (orphanLogIds.length) {
+      await logs.deleteMany({
+        _id: {
+          $in: orphanLogIds,
+        },
+      });
+    }
   }
 
   start() {
