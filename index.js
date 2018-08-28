@@ -11,7 +11,8 @@ module.exports = {
   },
   async initialize({
     aliveLoopTimeout = 500, // milliseconds
-    cleanUpLoopTimeout = 500, // milliseconds
+    zombieLoopTimeout = 24 * 60 * 60 * 1000, // milliseconds
+    cleanupLogsLoopTimeout = 500, // milliseconds
     lockHoldTimeout = 1000, // milliseconds
     lockAcquisitionRetryTimeout = 100, // milliseconds
     keepLogsFor = 6 * 31, // days
@@ -35,7 +36,8 @@ module.exports = {
 
     const runner = new SagaRunner({
       aliveLoopTimeout,
-      cleanUpLoopTimeout,
+      zombieLoopTimeout,
+      cleanupLogsLoopTimeout,
       lockHoldTimeout,
       lockAcquisitionRetryTimeout,
       keepLogsFor,

@@ -12,7 +12,8 @@ const QUEUE_STATE_ZOMBIE = 'zombie';
 class SagaRunner {
   constructor({
     aliveLoopTimeout, // milliseconds
-    cleanUpLoopTimeout, // milliseconds
+    zombieLoopTimeout, // milliseconds
+    cleanupLogsLoopTimeout, // milliseconds
     lockHoldTimeout, // milliseconds
     lockAcquisitionRetryTimeout, // milliseconds
     keepLogsFor, // days
@@ -53,7 +54,8 @@ class SagaRunner {
     }
 
     this.aliveLoopTimeout = aliveLoopTimeout;
-    this.cleanUpLoopTimeout = cleanUpLoopTimeout;
+    this.zombieLoopTimeout = zombieLoopTimeout;
+    this.cleanupLogsLoopTimeout = cleanupLogsLoopTimeout;
     this.lockHoldTimeout = lockHoldTimeout;
     this.lockAcquisitionRetryTimeout = lockAcquisitionRetryTimeout;
     this.keepLogsFor = keepLogsFor;
@@ -474,9 +476,11 @@ class SagaRunner {
       await this.updateLastUpdate();
     }, this.aliveLoopTimeout);
 
-    const cleanupLoop = utils.createEndlessLoop(async () => {
+    const cleanupLogsLoop = utils.createEndlessLoop(async () => {
       await this.cleanupLogs();
+    }, this.cleanupLogsLoopTimeout);
 
+    const zombieLoop = utils.createEndlessLoop(async () => {
       const zombie = await this.markZombiesAndCaptureOne();
       if (zombie) {
         const logger = await this.sagaLogger.find(logs, zombie.logId);
@@ -490,10 +494,11 @@ class SagaRunner {
           logId: zombie.logId,
         });
       }
-    }, this.cleanUpLoopTimeout);
+    }, this.zombieLoopTimeout);
 
     aliveLoop.start();
-    cleanupLoop.start();
+    zombieLoop.start();
+    cleanupLogsLoop.start();
   }
 }
 
