@@ -26,7 +26,7 @@ const STAGE_PENDING = 'STAGE_PENDING';
 const STAGE_COMPLETED = 'STAGE_COMPLETED';
 
 class SagaExecutionCoordinator {
-  async prepareParams(saga, initialParams, logs) {
+  async prepareParams(saga, initialParams, logs, options) {
     const flow = {};
 
     for (const log of logs) {
@@ -36,6 +36,10 @@ class SagaExecutionCoordinator {
           transaction: {},
           compensation: {},
         };
+
+        if (options && options.hasStep) {
+          flow[tcId].currentStep = log.step === options.step;
+        }
 
         let prop = 'compensation';
         if (log.transaction) {
@@ -69,21 +73,31 @@ class SagaExecutionCoordinator {
 
     let mergedTransactionValues = {};
     let mergedCompensationValues = {};
+    let stepMergedTransactionValues = {};
+    let stepMergedCompensationValues = {};
 
     for (const tcId in flow) {
       const tc = flow[tcId];
+
       if (tc.transaction && tc.transaction.value) {
         mergedTransactionValues = _.assign(mergedTransactionValues, tc.transaction.value);
       } else if (tc.compensation && tc.compensation.value) {
         mergedCompensationValues = _.assign(mergedCompensationValues, tc.compensation.value);
+      }
+
+      if (tc.currentStep) {
+        stepMergedTransactionValues = mergedTransactionValues;
+        stepMergedCompensationValues = mergedCompensationValues;
       }
     }
 
     const params = Object.assign({}, {
       flow,
       initial: initialParams,
-      transactionValues: mergedTransactionValues,
-      compensationValues: mergedCompensationValues,
+      transactionValues: stepMergedTransactionValues,
+      compensationValues: stepMergedCompensationValues,
+      fullTransactionValues: mergedTransactionValues,
+      fullCompensationValues: mergedCompensationValues,
     });
 
     return params;
@@ -186,7 +200,9 @@ class SagaExecutionCoordinator {
 
       if (maxPendingStepCount.count >= rollbackRetryWarningThreshold) {
         if (onTooManyRollbackAttempts) {
-          const params = await this.prepareParams(saga, initialParams, logs);
+          const params = await this.prepareParams(saga, initialParams, logs, {
+            hasStep: false,
+          });
           onTooManyRollbackAttempts(saga, params, logs);
         }
       }
@@ -214,7 +230,9 @@ class SagaExecutionCoordinator {
     }
 
     return Object.assign(result, {
-      params: await this.prepareParams(saga, initialParams, await logger.read()),
+      params: await this.prepareParams(saga, initialParams, await logger.read(), {
+        hasStep: false,
+      }),
     });
   }
 
@@ -244,7 +262,10 @@ class SagaExecutionCoordinator {
           step,
         });
 
-        const params = await this.prepareParams(saga, initialParams, await logger.read());
+        const params = await this.prepareParams(saga, initialParams, await logger.read(), {
+          hasStep: true,
+          step,
+        });
         const result = await transaction(params);
 
         await logger.log({
@@ -313,7 +334,10 @@ class SagaExecutionCoordinator {
           });
         }
 
-        const params = await this.prepareParams(saga, initialParams, await logger.read());
+        const params = await this.prepareParams(saga, initialParams, await logger.read(), {
+          hasStep: true,
+          step,
+        });
         const result = await compensation(params);
 
         await logger.log({
