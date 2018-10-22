@@ -38,7 +38,7 @@ class SagaExecutionCoordinator {
         };
 
         if (options && options.hasStep) {
-          flow[tcId].currentStep = log.step === options.step;
+          flow[tcId].currentStep = log.step === (options.step - 1);
         }
 
         let prop = 'compensation';
@@ -80,15 +80,20 @@ class SagaExecutionCoordinator {
       const tc = flow[tcId];
 
       if (tc.transaction && tc.transaction.value) {
-        mergedTransactionValues = _.assign(mergedTransactionValues, tc.transaction.value);
+        mergedTransactionValues = _.assign({}, mergedTransactionValues, tc.transaction.value);
       } else if (tc.compensation && tc.compensation.value) {
-        mergedCompensationValues = _.assign(mergedCompensationValues, tc.compensation.value);
+        mergedCompensationValues = _.assign({}, mergedCompensationValues, tc.compensation.value);
       }
 
       if (tc.currentStep) {
         stepMergedTransactionValues = mergedTransactionValues;
         stepMergedCompensationValues = mergedCompensationValues;
       }
+    }
+
+    if (!options || !options.hasStep) {
+      stepMergedTransactionValues = mergedTransactionValues;
+      stepMergedCompensationValues = mergedCompensationValues;
     }
 
     const params = Object.assign({}, {
