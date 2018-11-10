@@ -203,17 +203,6 @@ class SagaExecutionCoordinator {
         maxPendingStepCount,
       } = await this.analyze(saga, compensationLogs);
 
-      if (maxPendingStepCount.count >= rollbackRetryWarningThreshold) {
-        if (onTooManyRollbackAttempts) {
-          const params = await this.prepareParams(saga, initialParams, logs, {
-            hasStep: false,
-          });
-          onTooManyRollbackAttempts(saga, params, logs);
-        }
-      }
-
-      await utils.wait(rollbackWaitTimeout * Math.min(1, maxPendingStepCount.count));
-
       result = await this.rollback({
         saga,
         initialParams,
@@ -223,6 +212,19 @@ class SagaExecutionCoordinator {
         hasEnd: rollbackHasEnd,
         hasPending: rollbackHasPending,
       });
+
+      if (!result.isSuccess) {
+        if (maxPendingStepCount.count + 1 >= rollbackRetryWarningThreshold) {
+          if (onTooManyRollbackAttempts) {
+            const params = await this.prepareParams(saga, initialParams, logs, {
+              hasStep: false,
+            });
+            onTooManyRollbackAttempts(saga, params, logs);
+          }
+        }
+
+        await utils.wait(rollbackWaitTimeout * Math.min(1, maxPendingStepCount.count + 1));
+      }
     } else {
       result = await this.continue({
         saga,
@@ -288,7 +290,7 @@ class SagaExecutionCoordinator {
         await logger.log({
           transaction: true,
           isError: true,
-          error,
+          error: error.toString(),
           step,
         });
 
@@ -356,7 +358,7 @@ class SagaExecutionCoordinator {
         await logger.log({
           compensation: true,
           isError: true,
-          error,
+          error: error.toString(),
           step,
         });
 
