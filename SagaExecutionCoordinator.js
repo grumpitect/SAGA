@@ -290,7 +290,8 @@ class SagaExecutionCoordinator {
         await logger.log({
           transaction: true,
           isError: true,
-          error: error.toString(),
+          error,
+          errorString: error.toString(),
           step,
         });
 
@@ -358,7 +359,8 @@ class SagaExecutionCoordinator {
         await logger.log({
           compensation: true,
           isError: true,
-          error: error.toString(),
+          error,
+          errorString: error.toString(),
           step,
         });
 
