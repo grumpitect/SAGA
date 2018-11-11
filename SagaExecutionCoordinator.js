@@ -59,6 +59,7 @@ class SagaExecutionCoordinator {
           flow[tcId][prop] = {
             isError: true,
             error: log.error,
+            errorString: log.errorString,
             step: tcId,
           };
 
