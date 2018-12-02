@@ -292,7 +292,7 @@ class SagaExecutionCoordinator {
           transaction: true,
           isError: true,
           error,
-          errorString: error.toString(),
+          errorString: error && error.toString(),
           step,
         });
 
@@ -361,7 +361,7 @@ class SagaExecutionCoordinator {
           compensation: true,
           isError: true,
           error,
-          errorString: error.toString(),
+          errorString: error && error.toString(),
           step,
         });
 
