@@ -170,9 +170,7 @@ class SagaExecutionCoordinator {
   // todo: what happens when you make a request and it's timed out and the you compensate for it, and on the
   // other system it's get done!
 
-  // todo: implmenet synapse in microservices (even for payment)
-
-  // todo: when you want to compensate you have to first run the transaction successfully and then
+  // todo: maybe when you want to compensate you have to first run the transaction successfully and then
   // use the data to compensate the transaction
   async execute({
     saga,
