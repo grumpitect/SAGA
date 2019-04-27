@@ -1,5 +1,5 @@
 {
-  "name": "saga",
+  "name": "SAGA",
   "version": "0.0.22",
   "description": "",
   "main": "index.js",
@@ -8,9 +8,9 @@
   },
   "repository": {
     "type": "git",
-    "url": "git@git.pinova.ir:base/saga.git"
+    "url": "git@github.com:jay915/SAGA.git"
   },
-  "author": "jay <jay@pinova.ir>",
+  "author": "jay <asadzadeh.j@gmail.com>",
   "license": "ISC",
   "devDependencies": {
     "eslint": "^4.16.0",
