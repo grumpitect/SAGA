@@ -1,5 +1,5 @@
 {
-  "name": "SAGA",
+  "name": "saga",
   "version": "0.0.22",
   "description": "",
   "main": "index.js",
@@ -10,7 +10,7 @@
     "type": "git",
     "url": "git@github.com:jay915/SAGA.git"
   },
-  "author": "jay <asadzadeh.j@gmail.com>",
+  "author": "jay <jay@pinova.ir>",
   "license": "ISC",
   "devDependencies": {
     "eslint": "^4.16.0",
@@ -18,7 +18,7 @@
     "eslint-plugin-import": "^2.8.0"
   },
   "dependencies": {
-    "lodash": "^4.17.4",
+    "lodash": "^4.17.11",
     "moment": "^2.20.1",
     "mongodb": "^3.1.8"
   }
