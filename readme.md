@@ -2,6 +2,8 @@
 
 You can read more of the theory [here](https://blog.bernd-ruecker.com/saga-how-to-implement-complex-business-transactions-without-two-phase-commit-e00aa41a1b1b) and [here](https://youtu.be/0UTOLRTwOX0) is the YouTube video that inspired us to write this library.
 
+[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/0UTOLRTwOX0/0.jpg)](https://www.youtube.com/watch?v=0UTOLRTwOX0)
+
 ## How to use it
 A saga has two properties an `id` and a `flow` array. The `id` is any `string` to uniquely identify the saga within the saga list and the `flow` property is an array of steps the saga should take to finish the transaction.
 
